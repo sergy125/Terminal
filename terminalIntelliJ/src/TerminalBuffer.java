@@ -2,25 +2,39 @@ import java.util.Deque;
 import java.util.LinkedList;
 import java.util.EnumSet;
 
+/**
+ * Core data structure for the Terminal Emulator.
+ * Manages the active screen grid, the scrollback history, cursor state,
+ * and handles advanced features like read-only boundaries and wide characters (CJK).
+ */
 public class TerminalBuffer {
     private final int width;
     private final int height;
     private final int maxScrollback;
 
+    // Uses a Deque for efficient O(1) insertions at the end and removals at the front
     private final Deque<TerminalCell[]> scrollback;
     private final TerminalCell[][] screen;
 
+    // Current cursor coordinates
     private int cursorX = 0;
     private int cursorY = 0;
 
-    // Límites de protección
+    // Read-only boundaries (locks the prompt and historical output)
     private int readOnlyX = 0;
     private int readOnlyY = 0;
 
+    // Current styling attributes
     private int currentFg = -1;
     private int currentBg = -1;
     private EnumSet<TerminalCell.Style> currentStyles = EnumSet.noneOf(TerminalCell.Style.class);
 
+    /**
+     * Initializes a new Terminal Buffer.
+     * * @param width         Number of columns.
+     * @param height        Number of rows in the active screen.
+     * @param maxScrollback Maximum number of lines to keep in history.
+     */
     public TerminalBuffer(int width, int height, int maxScrollback) {
         this.width = width;
         this.height = height;
@@ -28,6 +42,7 @@ public class TerminalBuffer {
         this.scrollback = new LinkedList<>();
         this.screen = new TerminalCell[height][width];
 
+        // Initialize the active screen with empty cells
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) screen[y][x] = new TerminalCell();
         }
@@ -36,30 +51,45 @@ public class TerminalBuffer {
     public int getWidth() { return width; }
     public int getHeight() { return height; }
 
-    // --- MAGIA DEL BLOQUEO ---
+    // =======================================================
+    // --- READ-ONLY LOCKING MECHANISM ---
+    // =======================================================
 
+    /**
+     * Locks the buffer up to the current cursor position.
+     * Prevents user edits or cursor movement in the locked area.
+     */
     public void lockCurrentPosition() {
         this.readOnlyX = cursorX;
         this.readOnlyY = cursorY;
     }
 
-    // Novedad: Comprueba si una coordenada específica está protegida
+    /**
+     * Evaluates if a specific coordinate is mutable based on the read-only lock.
+     * * @return true if the position can be edited, false if it is protected.
+     */
     public boolean isPositionEditable(int x, int y) {
         if (y < readOnlyY) return false;
         if (y == readOnlyY && x < readOnlyX) return false;
         return true;
     }
 
+    // =======================================================
     // --- CURSOR OPERATIONS ---
+    // =======================================================
 
     public int getCursorColumn() { return cursorX; }
     public int getCursorRow() { return cursorY; }
 
+    /**
+     * Safely moves the cursor to a specific coordinate, enforcing screen
+     * bounds and respecting the read-only lock.
+     */
     public void setCursorPosition(int column, int row) {
         int targetX = Math.max(0, Math.min(column, width - 1));
         int targetY = Math.max(0, Math.min(row, height - 1));
 
-        // El muro de contención absoluto
+        // Absolute containment boundary enforcement
         if (targetY < readOnlyY) {
             targetY = readOnlyY;
         }
@@ -88,16 +118,26 @@ public class TerminalBuffer {
         }
     }
 
+    // =======================================================
     // --- NON-CURSOR EDITING OPERATIONS ---
+    // =======================================================
 
+    /**
+     * Handles vertical scrolling. Pushes the top row into the scrollback history
+     * and shifts all remaining rows upwards, leaving an empty line at the bottom.
+     */
     public void insertEmptyLineAtBottom() {
+        // Save the top row to scrollback history
         if (maxScrollback > 0) {
             TerminalCell[] topRowCopy = new TerminalCell[width];
             for (int x = 0; x < width; x++) topRowCopy[x] = new TerminalCell(screen[0][x]);
             scrollback.addLast(topRowCopy);
+
+            // Maintain memory bounds
             if (scrollback.size() > maxScrollback) scrollback.removeFirst();
         }
 
+        // Shift screen rows upwards
         for (int y = 0; y < height - 1; y++) {
             for (int x = 0; x < width; x++) {
                 screen[y][x].set(
@@ -107,9 +147,10 @@ public class TerminalBuffer {
             }
         }
 
+        // Clear the bottom row
         for (int x = 0; x < width; x++) screen[height - 1][x].reset();
 
-        // Ajustar el muro cuando la pantalla hace scroll
+        // Adjust the read-only boundary upwards as the screen scrolls
         if (readOnlyY > 0) {
             readOnlyY--;
         } else if (readOnlyY == 0) {
@@ -117,6 +158,7 @@ public class TerminalBuffer {
         }
     }
 
+    /** Clears the active screen. */
     public void clearScreen() {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) screen[y][x].reset();
@@ -126,26 +168,36 @@ public class TerminalBuffer {
         setCursorPosition(0, 0);
     }
 
+    /** Clears the active screen and flushes the scrollback history. */
     public void clearScreenAndScrollback() {
         clearScreen();
         scrollback.clear();
     }
 
+    // =======================================================
     // --- CURSOR-DEPENDENT EDITING OPERATIONS ---
+    // =======================================================
 
-    // --- MAGIA DEL BONUS: DETECTOR DE CARACTERES ANCHOS ---
+    /**
+     * Determines the display width of a character (Bonus Requirement).
+     * * @param c The character to evaluate.
+     * @return 2 for wide CJK characters/ideographs, 1 for standard characters.
+     */
     public int getCharWidth(char c) {
-        // Detecta los bloques Unicode principales de Chino, Japonés y Coreano (CJK)
-        if (c >= 0x4E00 && c <= 0x9FFF) return 2; // Ideogramas CJK
-        if (c >= 0x3040 && c <= 0x309F) return 2; // Hiragana (Japonés)
-        if (c >= 0x30A0 && c <= 0x30FF) return 2; // Katakana (Japonés)
-        if (c >= 0xFF01 && c <= 0xFF60) return 2; // Caracteres Fullwidth
-        return 1; // Para el abecedario normal, números, etc.
+        if (c >= 0x4E00 && c <= 0x9FFF) return 2; // CJK Unified Ideographs
+        if (c >= 0x3040 && c <= 0x309F) return 2; // Hiragana
+        if (c >= 0x30A0 && c <= 0x30FF) return 2; // Katakana
+        if (c >= 0xFF01 && c <= 0xFF60) return 2; // Fullwidth Forms
+        return 1; // Standard ASCII / Latin characters
     }
 
-    // --- CURSOR-DEPENDENT EDITING OPERATIONS ---
+    /**
+     * Writes text to the buffer, overwriting existing content.
+     * Automatically handles line wrapping, scrolling, and wide characters.
+     */
     public void writeText(String text) {
         for (char c : text.toCharArray()) {
+            // Eject cursor from locked areas
             if (!isPositionEditable(cursorX, cursorY)) {
                 setCursorPosition(readOnlyX, readOnlyY);
             }
@@ -154,10 +206,9 @@ public class TerminalBuffer {
                 cursorX = 0;
                 cursorY++;
             } else {
-                int charW = getCharWidth(c); // Preguntamos cuánto ocupa esta letra
+                int charW = getCharWidth(c);
 
-                // REGLA DEL BONUS: Si la letra ocupa 2 celdas, pero estamos justo en la
-                // última columna de la pantalla... ¡no cabe! Hay que saltar de línea primero.
+                // Edge case: Wide character at the last column triggers a wrap first
                 if (charW == 2 && cursorX == width - 1) {
                     cursorX = 0;
                     cursorY++;
@@ -167,20 +218,20 @@ public class TerminalBuffer {
                     }
                 }
 
-                // 1. Escribimos el carácter en la celda actual
+                // 1. Write the main character
                 screen[cursorY][cursorX].set(c, currentFg, currentBg, currentStyles);
 
-                // 2. Si ocupa 2 celdas, marcamos la siguiente como "fantasma" y movemos 2 veces
+                // 2. If wide, set the next cell as a placeholder (ghost cell)
                 if (charW == 2) {
                     screen[cursorY][cursorX + 1].set(' ', currentFg, currentBg, currentStyles);
-                    screen[cursorY][cursorX + 1].isWidePlaceholder = true; // Es la sombra del CJK
+                    screen[cursorY][cursorX + 1].isWidePlaceholder = true;
                     cursorX += 2;
                 } else {
-                    cursorX++; // Si es normal, movemos 1 vez
+                    cursorX++;
                 }
             }
 
-            // Comprobación de límites (Wrap)
+            // Check boundaries and wrap/scroll if needed
             if (cursorX >= width) {
                 cursorX = 0;
                 cursorY++;
@@ -192,18 +243,17 @@ public class TerminalBuffer {
         }
     }
 
-    // --- MÉTODOS QUE FALTABAN ---
-
+    /**
+     * Inserts text at the cursor, pushing existing characters to the right.
+     */
     public void insertText(String text) {
         for (char c : text.toCharArray()) {
-            // Si intentamos insertar en zona bloqueada, forzamos el cursor a la zona libre
             if (!isPositionEditable(cursorX, cursorY)) {
                 setCursorPosition(readOnlyX, readOnlyY);
             }
 
-            // Desplazar los caracteres actuales a la derecha para hacer hueco
+            // Shift current line characters to the right
             for (int x = width - 1; x > cursorX; x--) {
-                // Solo movemos las letras si esa parte de la pantalla no está bloqueada
                 if (isPositionEditable(x, cursorY) && isPositionEditable(x-1, cursorY)) {
                     screen[cursorY][x].set(
                             screen[cursorY][x-1].getCharacter(), screen[cursorY][x-1].getForegroundColor(),
@@ -212,10 +262,9 @@ public class TerminalBuffer {
                 }
             }
 
-            // Insertar el nuevo carácter
+            // Insert new character
             screen[cursorY][cursorX].set(c, currentFg, currentBg, currentStyles);
 
-            // Mover el cursor y manejar el salto de línea
             cursorX++;
             if (cursorX >= width) {
                 cursorX = 0;
@@ -228,50 +277,48 @@ public class TerminalBuffer {
         }
     }
 
+    /** Fills the current line with a specified character, respecting locks. */
     public void fillLine(char c) {
         for (int x = 0; x < width; x++) {
-            // Solo rellenamos la celda si NO está protegida por el candado
             if (isPositionEditable(x, cursorY)) {
                 screen[cursorY][x].set(c, currentFg, currentBg, currentStyles);
             }
         }
     }
+
     // =======================================================
-    // --- CONTENT ACCESS (Acceso a la información) ---
+    // --- CONTENT ACCESS API ---
     // =======================================================
 
-    // Método auxiliar privado: El núcleo que unifica Screen y Scrollback.
+    /**
+     * Internal unified getter. Resolves negative Y coordinates to the scrollback
+     * history and positive Y coordinates to the active screen.
+     */
     private TerminalCell getCell(int x, int y) {
-        if (x < 0 || x >= width) throw new IllegalArgumentException("X fuera de límites");
+        if (x < 0 || x >= width) throw new IllegalArgumentException("X out of bounds");
 
         if (y < 0) {
-            // Si 'y' es negativo, calculamos su posición en el historial (Deque)
             int scrollbackIndex = scrollback.size() + y;
             if (scrollbackIndex < 0 || scrollbackIndex >= scrollback.size()) {
-                throw new IllegalArgumentException("Y fuera de límites del scrollback");
+                throw new IllegalArgumentException("Y out of scrollback bounds");
             }
             return ((TerminalCell[]) scrollback.toArray()[scrollbackIndex])[x];
         } else if (y < height) {
-            // Si 'y' es 0 o positivo, leemos de la matriz normal de la pantalla
             return screen[y][x];
         } else {
-            throw new IllegalArgumentException("Y fuera de límites");
+            throw new IllegalArgumentException("Y out of screen bounds");
         }
     }
 
-    // 1. Get character at position (from screen and scrollback)
     public char getCharacterAt(int x, int y) {
         return getCell(x, y).getCharacter();
     }
 
-    // 2. Get attributes at position (from screen and scrollback)
     public TerminalCell getAttributesAt(int x, int y) {
-        // Devolvemos una COPIA de la celda (new TerminalCell)
-        // para que nadie pueda modificar los colores originales por accidente.
+        // Returns a deep copy to prevent unauthorized state mutations
         return new TerminalCell(getCell(x, y));
     }
 
-    // 3. Get line as string (from screen and scrollback)
     public String getLineAsString(int y) {
         StringBuilder sb = new StringBuilder(width);
         for (int x = 0; x < width; x++) {
@@ -280,27 +327,22 @@ public class TerminalBuffer {
         return sb.toString();
     }
 
-    // 4. Get entire screen content as string
     public String getEntireScreenAsString() {
         StringBuilder sb = new StringBuilder(width * height + height);
-        // Bucle solo por la altura de la pantalla visible (y >= 0)
         for (int y = 0; y < height; y++) {
             sb.append(getLineAsString(y)).append("\n");
         }
         return sb.toString();
     }
 
-    // 5. Get entire screen+scrollback content as string
     public String getEntireScreenAndScrollbackAsString() {
         StringBuilder sb = new StringBuilder();
-        // Primero: Bucle por los números negativos para sacar el historial
+        // Append historical data first
         for (int i = -scrollback.size(); i < 0; i++) {
             sb.append(getLineAsString(i)).append("\n");
         }
-        // Segundo: Añadimos la pantalla visible normal justo debajo
+        // Append active screen data
         sb.append(getEntireScreenAsString());
         return sb.toString();
-
     }
-
 }

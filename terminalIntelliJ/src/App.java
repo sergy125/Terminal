@@ -1,35 +1,44 @@
 import javax.swing.*;
 
+/**
+ * Main application entry point for the Java Terminal Emulator.
+ * Bootstraps the terminal buffer (data model) and the Swing UI (view).
+ */
 public class App {
     public static void main(String[] args) {
+        // Ensure UI initialization is executed on the Event Dispatch Thread (EDT) for thread safety
         SwingUtilities.invokeLater(() -> {
 
-            JFrame frame = new JFrame("Mi Emulador de Terminal Java");
+            // Initialize the main application window
+            JFrame frame = new JFrame("Java Terminal Emulator");
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             frame.setResizable(false);
 
-            // 80 columnas de ancho, 15 líneas de alto máximo, 1000 líneas de historial
-            TerminalBuffer buffer = new TerminalBuffer(80, 15, 1000);
+            // Initialize the core data structure (Terminal Buffer)
+            // Configuration: 80 columns width, 15 rows max height, 1000 lines of scrollback history
+            TerminalBuffer buffer = new TerminalBuffer(80, 25, 1000);
 
-            // 1. Escribimos el mensaje inicial con la guía de teclas
-            buffer.writeText("=== BIENVENIDO A TU TERMINAL ===\n\n");
-            buffer.writeText("Atajos para probar los requisitos del proyecto:\n");
-            buffer.writeText(" [F4] Insertar texto (empuja las letras a la derecha)\n");
-            buffer.writeText(" [F5] Limpiar solo la pantalla activa\n");
-            buffer.writeText(" [F6] Rellenar la linea actual con '='\n");
-            buffer.writeText(" [F7] Limpiar TODO (pantalla y el historial/scrollback)\n\n");
-            buffer.writeText("Escribe un caracter japones (ej: 日本語) para ver el Bonus.\n");
+            // Populate the initial screen with the welcome banner and hotkey instructions
+            buffer.writeText("=== JAVA TERMINAL EMULATOR ===\n\n");
+            buffer.writeText("Hotkeys to test project requirements:\n");
+            buffer.writeText(" [F4] Insert text (pushes existing characters to the right)\n");
+            buffer.writeText(" [F5] Clear the active screen (preserves scrollback history)\n");
+            buffer.writeText(" [F6] Fill the current line with '=' characters\n");
+            buffer.writeText(" [F7] Clear everything (active screen AND scrollback history)\n\n");
+            buffer.writeText("Type a wide character (e.g., CJK: 日本語) to test the Bonus requirement.\n");
             buffer.writeText("> ");
 
-            // 2. Blindamos todo este texto de arriba para que sea intocable
+            // Apply the read-only boundary
+            // Everything written above this point is locked and cannot be modified or deleted by the user
             buffer.lockCurrentPosition();
 
-            // 3. Cargamos la interfaz gráfica
+            // Initialize the UI component and bind it to the data buffer
             TerminalPanel terminalPanel = new TerminalPanel(buffer);
 
+            // Configure window properties, pack components, and render
             frame.add(terminalPanel);
-            frame.pack();
-            frame.setLocationRelativeTo(null);
+            frame.pack(); // Size the frame to precisely fit the TerminalPanel's preferred size
+            frame.setLocationRelativeTo(null); // Center the window on the screen
             frame.setVisible(true);
         });
     }
