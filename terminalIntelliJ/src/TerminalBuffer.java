@@ -267,6 +267,7 @@ public class TerminalBuffer {
         // Segundo: Añadimos la pantalla visible normal justo debajo
         sb.append(getEntireScreenAsString());
         return sb.toString();
+
     }
 
 }
