@@ -12,3 +12,5 @@ The architecture is divided into clear components to separate the data model fro
 * **TerminalPanel:** To visualize the data, I created this class using Java Swing. It serves as the bridge between the user and the buffer. It captures raw keyboard events, translates them into buffer operations, and then triggers a repaint. For the rendering engine, I bypassed standard text components and used Graphics2D to draw the text cell by cell on a strict monospaced grid. I applied a custom pastel color palette to the rows to give the terminal a unique aesthetic while strictly adhering to the spatial rules dictated by the buffer.
 
 * **TerminalBufferTest:** To guarantee that the engine is completely robust, I wrote a comprehensive test suite using JUnit 5. These tests act as living documentation and rigorously check boundary conditions, cursor collisions against the read-only locks, and the integrity of the scrollback memory when capacity is reached.
+
+The executable .jar is located in out/artifacts/terminal_jar/Terminal.jar
