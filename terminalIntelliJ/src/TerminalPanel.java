@@ -10,7 +10,7 @@ public class TerminalPanel extends JPanel {
     private int charHeight = 20;
     private int fontAscent = 15;
 
-    // ¡NUEVO! Nuestra paleta de colores pasteles para el texto
+    // Paleta de colores pasteles
     private final Color[] pastelColors = {
             new Color(119, 158, 203), // Azul pastel
             new Color(119, 221, 119), // Verde pastel
@@ -22,10 +22,9 @@ public class TerminalPanel extends JPanel {
 
     public TerminalPanel(TerminalBuffer buffer) {
         this.buffer = buffer;
-        // Hacemos la fuente un poco más gruesa (BOLD) para que se lea mejor sobre fondo claro
         this.font = new Font("Monospaced", Font.BOLD, 18);
 
-        // ¡NUEVO! Fondo Rosa Pastel
+        // Fondo Rosa Pastel
         setBackground(new Color(255, 218, 224));
         setFocusable(true);
 
@@ -36,8 +35,7 @@ public class TerminalPanel extends JPanel {
 
                 if (c == '\n' || c == '\r') {
                     buffer.writeText("\n> ");
-                    // ¡HEMOS BORRADO EL LOCK AQUÍ!
-                    // Ahora al pulsar Enter no se bloquea la línea de arriba.
+                    // No ponemos lockCurrentPosition() para que puedas volver arriba si quieres
                 } else if (c == '\b') {
                     int currentX = buffer.getCursorColumn();
                     int currentY = buffer.getCursorRow();
@@ -49,6 +47,7 @@ public class TerminalPanel extends JPanel {
                         targetY--;
                     }
 
+                    // Solo borramos si no choca con el "candado" del inicio
                     if (targetY >= 0 && buffer.isPositionEditable(targetX, targetY)) {
                         buffer.moveCursorLeft(1);
                         buffer.writeText(" ");
@@ -64,36 +63,28 @@ public class TerminalPanel extends JPanel {
             public void keyPressed(KeyEvent e) {
                 int keyCode = e.getKeyCode();
 
-                // --- MOVIMIENTO (Requisito: Move cursor up, down, left, right) ---
+                // --- MOVIMIENTO DEL CURSOR ---
                 if (keyCode == KeyEvent.VK_UP) buffer.moveCursorUp(1);
                 else if (keyCode == KeyEvent.VK_DOWN) buffer.moveCursorDown(1);
                 else if (keyCode == KeyEvent.VK_LEFT) buffer.moveCursorLeft(1);
                 else if (keyCode == KeyEvent.VK_RIGHT) buffer.moveCursorRight(1);
 
-                    // --- PRUEBAS DE LOS REQUISITOS DEL PROYECTO ---
-
-                    // Requisito: "Insert a text on a line" -> Pulsa F4
-                    // A diferencia de escribir normal, esto inserta una "X" y EMPUJA el texto a la derecha
+                    // --- TECLAS DE PRUEBA PARA EL PROFESOR ---
+                    // F4: Insertar texto (empuja a la derecha)
                 else if (keyCode == KeyEvent.VK_F4) {
                     buffer.insertText("X");
                 }
-
-                // Requisito: "Clear the entire screen" -> Pulsa F5
-                // Borra todo lo que ves, pero si luego haces scroll (cuando lo programemos), el historial seguiría ahí.
+                // F5: Limpiar pantalla activa
                 else if (keyCode == KeyEvent.VK_F5) {
                     buffer.clearScreen();
-                    buffer.writeText("> "); // Volvemos a poner el candado para no romper el programa
+                    buffer.writeText("> ");
                     buffer.lockCurrentPosition();
                 }
-
-                // Requisito: "Fill a line with a character" -> Pulsa F6
-                // Rellena la fila donde esté el cursor con un símbolo.
+                // F6: Rellenar línea
                 else if (keyCode == KeyEvent.VK_F6) {
                     buffer.fillLine('=');
                 }
-
-                // Requisito: "Clear the screen and scrollback" -> Pulsa F7
-                // Borra absolutamente todo, pantalla y memoria (historial).
+                // F7: Limpiar pantalla y memoria (scrollback)
                 else if (keyCode == KeyEvent.VK_F7) {
                     buffer.clearScreenAndScrollback();
                     buffer.writeText("> ");
@@ -123,21 +114,22 @@ public class TerminalPanel extends JPanel {
 
         // Dibujar el texto línea por línea
         for (int y = 0; y < rows; y++) {
-
-            // ¡NUEVO! Elegimos el color de la paleta basándonos en la fila actual.
-            // El operador % (módulo) hace que si llegamos al final de la paleta, vuelva a empezar.
             Color lineColor = pastelColors[y % pastelColors.length];
             g2.setColor(lineColor);
 
             for (int x = 0; x < cols; x++) {
-                char c = buffer.getCharacterAt(x, y);
-                if (c != ' ') {
+                // Obtenemos la celda completa para poder ver si es un carácter "fantasma" del Bonus
+                TerminalCell cell = buffer.getAttributesAt(x, y);
+                char c = cell.getCharacter();
+
+                // ¡LÓGICA DEL BONUS! No dibujamos espacios vacíos ni celdas fantasma (isWidePlaceholder)
+                if (c != ' ' && !cell.isWidePlaceholder) {
                     g2.drawString(String.valueOf(c), x * charWidth, (y * charHeight) + fontAscent);
                 }
             }
         }
 
-        // ¡NUEVO! Cursor de color blanco semitransparente para que pegue con los pasteles
+        // Cursor de color blanco semitransparente
         g2.setColor(new Color(255, 255, 255, 180));
         g2.fillRect(buffer.getCursorColumn() * charWidth, buffer.getCursorRow() * charHeight, charWidth, charHeight);
     }
@@ -146,5 +138,4 @@ public class TerminalPanel extends JPanel {
     public Dimension getPreferredSize() {
         return new Dimension(buffer.getWidth() * charWidth, buffer.getHeight() * charHeight);
     }
-
 }

@@ -133,9 +133,19 @@ public class TerminalBuffer {
 
     // --- CURSOR-DEPENDENT EDITING OPERATIONS ---
 
+    // --- MAGIA DEL BONUS: DETECTOR DE CARACTERES ANCHOS ---
+    public int getCharWidth(char c) {
+        // Detecta los bloques Unicode principales de Chino, Japonés y Coreano (CJK)
+        if (c >= 0x4E00 && c <= 0x9FFF) return 2; // Ideogramas CJK
+        if (c >= 0x3040 && c <= 0x309F) return 2; // Hiragana (Japonés)
+        if (c >= 0x30A0 && c <= 0x30FF) return 2; // Katakana (Japonés)
+        if (c >= 0xFF01 && c <= 0xFF60) return 2; // Caracteres Fullwidth
+        return 1; // Para el abecedario normal, números, etc.
+    }
+
+    // --- CURSOR-DEPENDENT EDITING OPERATIONS ---
     public void writeText(String text) {
         for (char c : text.toCharArray()) {
-            // BLINDAJE: Si el cursor logró colarse en zona prohibida, lo forzamos a salir
             if (!isPositionEditable(cursorX, cursorY)) {
                 setCursorPosition(readOnlyX, readOnlyY);
             }
@@ -144,10 +154,33 @@ public class TerminalBuffer {
                 cursorX = 0;
                 cursorY++;
             } else {
+                int charW = getCharWidth(c); // Preguntamos cuánto ocupa esta letra
+
+                // REGLA DEL BONUS: Si la letra ocupa 2 celdas, pero estamos justo en la
+                // última columna de la pantalla... ¡no cabe! Hay que saltar de línea primero.
+                if (charW == 2 && cursorX == width - 1) {
+                    cursorX = 0;
+                    cursorY++;
+                    if (cursorY >= height) {
+                        insertEmptyLineAtBottom();
+                        cursorY = height - 1;
+                    }
+                }
+
+                // 1. Escribimos el carácter en la celda actual
                 screen[cursorY][cursorX].set(c, currentFg, currentBg, currentStyles);
-                cursorX++;
+
+                // 2. Si ocupa 2 celdas, marcamos la siguiente como "fantasma" y movemos 2 veces
+                if (charW == 2) {
+                    screen[cursorY][cursorX + 1].set(' ', currentFg, currentBg, currentStyles);
+                    screen[cursorY][cursorX + 1].isWidePlaceholder = true; // Es la sombra del CJK
+                    cursorX += 2;
+                } else {
+                    cursorX++; // Si es normal, movemos 1 vez
+                }
             }
 
+            // Comprobación de límites (Wrap)
             if (cursorX >= width) {
                 cursorX = 0;
                 cursorY++;
